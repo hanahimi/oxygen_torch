@@ -1,58 +1,70 @@
+#-*-coding:UTF-8
 """
 implementation of PoseNet and MapNet networks 
 """
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-import torch.nn.init        # µ÷ÓÃ³õÊ¼»¯²ÎÊı
+import torch.nn.init        # è°ƒç”¨åˆå§‹åŒ–å‚æ•°
 import numpy as np
 
+def filter_hook(m, g_in, g_out):
+    g_filtered = []
+    for g in g_in:
+        g = g.clone()
+        g[g != g] = 0
+        g_filtered.append(g)
+    
+    return tuple(g_filtered)
 
 class PoseNet(nn.Module):
     def __init__(self, feature_extractor, 
                         droprate=0.5, 
                         pretrained=True,
-                        feat_dim=2048
-                        , filter_nans=False):
+                        feat_dim=2048, 
+                        filter_nans=False):
         super(PoseNet, self).__init__()
         self.droprate = droprate
 
-        # Ìæ»»feature_extractorÍøÂçµÄ×îºóÒ»¸öFC²ã
+        # æ›¿æ¢feature_extractorç½‘ç»œçš„æœ€åä¸€ä¸ªFCå±‚
         self.new_feature_extractor = feature_extractor
-        self.new_feature_extractor.avgpool = nn.AdaptiveAvgPool2d(1)    # ²»¹ÜÔ­À´avgpoolµÄÉèÖÃ£¬¶¼¸ÄÎªĞÂµÄÅäÖÃ
+        self.new_feature_extractor.avgpool = nn.AdaptiveAvgPool2d(1)    # ä¸ç®¡åŸæ¥avgpoolçš„è®¾ç½®ï¼Œéƒ½æ”¹ä¸ºæ–°çš„é…ç½®
         ori_fe_out_dim = self.new_feature_extractor.fc.in_features
         # new fc layer
         self.new_feature_extractor.fc = nn.Linear(ori_fe_out_dim, feat_dim)
 
         self.fc_xyz  = nn.Linear(feat_dim, 3)
-        self.fc_wpqr = nn.Linear(feat_dim, 3)   # ÎÄÖĞÊ¹ÓÃlog(q)±íÊ¾½Ç¶È
-
-        # »ñÈ¡ĞèÒªÖØĞÂÑµÁ·µÄ²ã
+        self.fc_wpqr = nn.Linear(feat_dim, 3)   # æ–‡ä¸­ä½¿ç”¨log(q)è¡¨ç¤ºè§’åº¦
+        
+        if filter_nans:
+            self.fc_wpqr.register_backward_hook(hook=filter_hook)
+      
+        # è·å–éœ€è¦é‡æ–°è®­ç»ƒçš„å±‚
         if pretrained:
-            # ÈôÓĞÔ¤ÑµÁ·Êı¾İ£¬Õâ¶ÔĞÂ¼ÓÈëµÄlayer½øĞĞ³õÊ¼»¯
+            # è‹¥æœ‰é¢„è®­ç»ƒæ•°æ®ï¼Œè¿™å¯¹æ–°åŠ å…¥çš„layerè¿›è¡Œåˆå§‹åŒ–
             init_modules = [self.new_feature_extractor.fc, self.fc_xyz, self.fc_wpqr]
         else:
-            # ·ñÔò£¬³õÊ¼»¯Õû¸öÍøÂç
+            # å¦åˆ™ï¼Œåˆå§‹åŒ–æ•´ä¸ªç½‘ç»œ
             init_modules = self.modules()
 
-        # ±éÀúĞèÒª³õÊ¼»¯µÄ²ã£¬Ê¹ÓÃinitÄ£¿é³õÊ¼»¯
+        # éå†éœ€è¦åˆå§‹åŒ–çš„å±‚ï¼Œä½¿ç”¨initæ¨¡å—åˆå§‹åŒ–
         for m in init_modules:
             if isinstance(m, nn.Conv2d) or isinstance(m, nn.Linear):
-                nn.init.kaiming_normal_(m.weight.data)  # fun_ ±íÊ¾inplace²Ù×÷
-                if m.bias is not None:  # Èô´æÔÚÆ«ÒÆÏî£¬³õÊ¼»¯Îª³£Êı0
+                nn.init.kaiming_normal_(m.weight.data)  # fun_ è¡¨ç¤ºinplaceæ“ä½œ
+                if m.bias is not None:  # è‹¥å­˜åœ¨åç§»é¡¹ï¼Œåˆå§‹åŒ–ä¸ºå¸¸æ•°0
                     nn.init.constant_(m.bias.data, 0)
     
     def forward(self, x):
-        x = self.new_feature_extractor(x)   # Ê¹ÓÃÇ¨ÒÆ¹ıµÄÍøÂçÌáÈ¡FCÌØÕ÷
+        x = self.new_feature_extractor(x)   # ä½¿ç”¨è¿ç§»è¿‡çš„ç½‘ç»œæå–FCç‰¹å¾
         x = F.relu(x)
         if self.droprate > 0:
-            x = F.dropout(x, p=self.droprate)   # °´ÕÕ¸ÅÂÊp½«FCÌØÕ÷²ÎÊıËæ»úÉèÎª0
+            x = F.dropout(x, p=self.droprate)   # æŒ‰ç…§æ¦‚ç‡på°†FCç‰¹å¾å‚æ•°éšæœºè®¾ä¸º0
         xyz  = self.fc_xyz(x)
         wpqr = self.fc_wpqr(x)
-        return torch.cat((xyz, wpqr), 1)    # ºÏ²¢µ½Ò»ÆğÊä³ö
+        return torch.cat((xyz, wpqr), 1)    # åˆå¹¶åˆ°ä¸€èµ·è¾“å‡º
     
     def show_info(self):
-        # ´òÓ¡ÍøÂç²ÎÊıµÄÃû³ÆºÍ×´Ì¬
+        # æ‰“å°ç½‘ç»œå‚æ•°çš„åç§°å’ŒçŠ¶æ€
         params_iter = self.named_parameters()
         for name, param in params_iter:
             print(name," : ",param.shape)
@@ -78,14 +90,18 @@ class MapNet(nn.Module):
         s = x.size()
         x = x.view(-1, *s[2:])
         """
-        # *s[2:] µÈÓÚ°Ñs[2:]£¨torch.Size£©µÄÊı¾İÕ¹¿ª£¬±äÎª·ÖÀëµÄ²ÎÊı
+        # *s[2:] ç­‰äºæŠŠs[2:]ï¼ˆtorch.Sizeï¼‰çš„æ•°æ®å±•å¼€ï¼Œå˜ä¸ºåˆ†ç¦»çš„å‚æ•°
         eg. 
         x = torch.randn(2,3,4,5,6)
         s = x.size()    # s == torch.Size([2, 3, 4, 5, 6])
-        s[2:] Îª torch.Size([4, 5, 6])
-        *s[2:] ¼´ 4 5 6 ÊÇ·Ö±ğ3¸ö²ÎÊı
-        x = x.view(-1, *s[2:]) µÈ¼ÛÓÚ x.view(-1, 4,5,6)
+        s[2:] ä¸º torch.Size([4, 5, 6])
+        *s[2:] å³ 4 5 6 æ˜¯åˆ†åˆ«3ä¸ªå‚æ•°
+        x = x.view(-1, *s[2:]) ç­‰ä»·äº x.view(-1, 4,5,6)
         """
         poses = self.mapnet(x)
         poses = poses.view(s[0], s[1], -1)
         return poses
+
+
+
+

@@ -1,2 +1,12 @@
 eclipse.preferences.version=1
+encoding//src/geomapnet/common/criterion.py=UTF-8
+encoding//src/geomapnet/common/pose_utils.py=UTF-8
+encoding//src/geomapnet/dataset_loaders/composite.py=UTF-8
+encoding//src/geomapnet/dataset_loaders/seven_scenes.py=UTF-8
+encoding//src/geomapnet/dataset_loaders/utils.py=UTF-8
+encoding//src/geomapnet/models/posenet.py=UTF-8
+encoding//src/geomapnet/scripts/mytrain.py=UTF-8
+encoding//src/geomapnet/testdemo.py=UTF-8
+encoding//src/pthnbtut/ch01/4_cifar10_tutorial.py=UTF-8
 encoding//src/test.py=UTF-8
+encoding//src/utils/dataio.py=UTF-8
